@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: brood
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: BROOD_HOST
+        value: 0.0.0.0

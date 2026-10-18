@@ -72,6 +72,12 @@ npm run dev
 
 Open the Vite URL, usually <http://localhost:5173>. The dev server proxies `/api` to the local Java process. Use Ctrl-C in each terminal to stop its process.
 
+## Deploy on Render
+
+The repository includes a Render Blueprint and a multi-stage Dockerfile. Render builds the React app, packages it into the Java server, and serves the UI and API from one origin. Local development still uses the separate Vite and Java processes above. The deployed server binds to Render's `PORT` on `0.0.0.0`; outside Render it defaults to loopback for local safety.
+
+After the `main` branch is pushed to GitHub, open the Render dashboard, choose **New → Blueprint**, connect `BSDeeksha2005/Brood`, and apply the `render.yaml` blueprint. The free web-service plan can sleep after inactivity, so the first visit after a quiet period may take a little longer. Simulation worlds and Fork Time experiments are in memory and reset when the service restarts.
+
 ## Test and build
 
 Simulation and language tests/build:
@@ -115,5 +121,5 @@ Screenshot or short terrarium recording can be added here when one is prepared.
 - Fork experiments are in-memory, limited to eight at once, and disappear when the API process exits. The main world also resets on server restart.
 - Fork Time supports snapshot branching and deterministic forward execution, but does not retain historical world snapshots for scrubbing or replay.
 - Rule-execution history is included in snapshots and currently has no retention bound.
-- The API is intentionally a local development service, not a public deployment configuration. No hosting target or deployment credentials are configured in this repository.
+- The public Render demo is intentionally a bounded, single shared world: there are no user accounts or persistent sessions, and anyone with the URL can edit programs and advance the world. Tick counts, program sizes, rule counts, fork count, and branch advances have explicit limits.
 - No cross-platform bit-for-bit guarantee is claimed.

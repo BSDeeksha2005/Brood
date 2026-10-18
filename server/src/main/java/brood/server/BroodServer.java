@@ -3,8 +3,10 @@ package brood.server;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.NoSuchElementException;
 import java.util.concurrent.Executors;
 
@@ -13,17 +15,84 @@ public final class BroodServer {
     private BroodServer() { }
 
     public static void main(String[] args) throws IOException {
-        int port = Integer.getInteger("brood.port", 8080);
-        HttpServer server = create(new InetSocketAddress("127.0.0.1", port), new SimulationSession());
+        int port = configuredPort();
+        String host = System.getenv().getOrDefault("BROOD_HOST", "127.0.0.1");
+        HttpServer server = create(new InetSocketAddress(host, port), new SimulationSession());
         server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
         server.start();
-        System.out.println("Brood simulation API listening on http://127.0.0.1:" + port);
+        System.out.println("Brood listening on http://" + host + ":" + port);
+    }
+
+    private static int configuredPort() {
+        String environmentPort = System.getenv("PORT");
+        if (environmentPort != null && !environmentPort.isBlank()) return Integer.parseInt(environmentPort);
+        return Integer.getInteger("brood.port", 8080);
     }
 
     static HttpServer create(InetSocketAddress address, SimulationSession session) throws IOException {
         HttpServer server = HttpServer.create(address, 0);
         server.createContext("/api", exchange -> handle(exchange, session));
+        server.createContext("/", BroodServer::serveStaticAsset);
         return server;
+    }
+
+    private static void serveStaticAsset(HttpExchange exchange) throws IOException {
+        try {
+            exchange.getResponseHeaders().set("Cache-Control", "no-store");
+            exchange.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
+            if (!exchange.getRequestMethod().equals("GET")) {
+                send(exchange, 405, "Method not allowed");
+                return;
+            }
+            String path = exchange.getRequestURI().getPath();
+            String asset = path.equals("/") ? "index.html" : path.substring(1);
+            if (asset.isBlank() || asset.startsWith("/") || asset.contains("\\")
+                    || asset.indexOf(0) >= 0 || hasDotSegment(asset)) {
+                send(exchange, 400, "Invalid asset path");
+                return;
+            }
+
+            try (InputStream resource = BroodServer.class.getClassLoader()
+                    .getResourceAsStream("static/" + asset)) {
+                if (resource == null) {
+                    send(exchange, 404, "Not found");
+                    return;
+                }
+                byte[] bytes = resource.readAllBytes();
+                exchange.getResponseHeaders().set("Content-Type", contentType(asset));
+                exchange.sendResponseHeaders(200, bytes.length);
+                exchange.getResponseBody().write(bytes);
+            }
+        } finally {
+            exchange.close();
+        }
+    }
+
+    private static boolean hasDotSegment(String asset) {
+        for (String segment : asset.split("/", -1)) {
+            if (segment.equals(".") || segment.equals("..")) return true;
+        }
+        return false;
+    }
+
+    private static String contentType(String asset) {
+        int dot = asset.lastIndexOf('.');
+        String extension = dot < 0 ? "" : asset.substring(dot + 1).toLowerCase(Locale.ROOT);
+        return switch (extension) {
+            case "html" -> "text/html; charset=utf-8";
+            case "css" -> "text/css; charset=utf-8";
+            case "js" -> "text/javascript; charset=utf-8";
+            case "json", "map" -> "application/json; charset=utf-8";
+            case "svg" -> "image/svg+xml";
+            case "png" -> "image/png";
+            case "jpg", "jpeg" -> "image/jpeg";
+            case "webp" -> "image/webp";
+            case "ico" -> "image/x-icon";
+            case "woff" -> "font/woff";
+            case "woff2" -> "font/woff2";
+            case "txt" -> "text/plain; charset=utf-8";
+            default -> "application/octet-stream";
+        };
     }
 
     private static void handle(HttpExchange exchange, SimulationSession session) throws IOException {

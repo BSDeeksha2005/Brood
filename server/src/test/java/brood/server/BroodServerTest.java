@@ -62,6 +62,16 @@ class BroodServerTest {
     }
 
     @Test
+    void servesBundledFrontendAssetsWithoutRoutingThemThroughTheApi() throws Exception {
+        HttpResponse<String> page = get("/");
+        assertEquals(200, page.statusCode());
+        assertTrue(page.headers().firstValue("Content-Type").orElse("").startsWith("text/html"));
+        assertTrue(page.body().contains("Brood static resource test"));
+        assertEquals(404, get("/missing.js").statusCode());
+        assertEquals(405, request("POST", "/", "ignored").statusCode());
+    }
+
+    @Test
     void rejectedProgramReturnsDiagnosticAndDoesNotAdvanceOrReplaceWorld() throws Exception {
         String before = get("/api/world").body();
         HttpResponse<String> rejected = request("PUT", "/api/creatures/1/program", "when energy = 5: rest");
