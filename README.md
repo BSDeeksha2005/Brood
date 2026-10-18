@@ -2,6 +2,8 @@
 
 Brood is a small artificial-life laboratory. Observe six named creatures in a living terrarium, edit their rule programs, and compare two deterministic futures from a saved moment.
 
+**Live demo:** <https://brood-3581.onrender.com>
+
 ## What works
 
 - Six authoritative Java creatures: Mallow, Pip, Lumen, Nori, Peach, and Thimble. Each starts with its own deterministic rule program.
@@ -74,9 +76,9 @@ Open the Vite URL, usually <http://localhost:5173>. The dev server proxies `/api
 
 ## Deploy on Render
 
-The repository includes a Render Blueprint and a multi-stage Dockerfile. Render builds the React app, packages it into the Java server, and serves the UI and API from one origin. Local development still uses the separate Vite and Java processes above. The deployed server binds to Render's `PORT` on `0.0.0.0`; outside Render it defaults to loopback for local safety.
+The live demo is deployed on Render from the `main` branch of [`BSDeeksha2005/Brood`](https://github.com/BSDeeksha2005/Brood). The repository includes a Render Blueprint and a multi-stage Dockerfile. Render builds the React app, packages it into the Java server, and serves the UI and API from one origin. Local development still uses the separate Vite and Java processes above. The deployed server binds to Render's `PORT` on `0.0.0.0`; outside Render it defaults to loopback for local safety.
 
-After the `main` branch is pushed to GitHub, open the Render dashboard, choose **New → Blueprint**, connect `BSDeeksha2005/Brood`, and apply the `render.yaml` blueprint. The free web-service plan can sleep after inactivity, so the first visit after a quiet period may take a little longer. Simulation worlds and Fork Time experiments are in memory and reset when the service restarts.
+Render deploys new commits pushed to `main`. To set up another instance, open the Render dashboard, choose **New → Blueprint**, connect `BSDeeksha2005/Brood`, and apply the `render.yaml` blueprint. The free web-service plan can sleep after inactivity, so the first visit after a quiet period may take 50 seconds or more to wake. Simulation worlds and Fork Time experiments are in memory and reset when the service restarts.
 
 ## Test and build
 
