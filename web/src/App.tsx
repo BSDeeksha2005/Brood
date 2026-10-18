@@ -1,31 +1,107 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { Inspector } from './components/Inspector'
+import { ForkTimePanel } from './components/ForkTimePanel'
 import { Terrarium } from './components/Terrarium'
-import { advanceFixture, applyRules, createFixture, updateSavedRules } from './simulation/fixture'
-import type { CreatureRule, WorldSnapshot } from './simulation/types'
+import { engineStore } from './simulation/EngineStore'
+import type { ForkExperiment } from './simulation/types'
+
+function useEngineView() {
+  return useSyncExternalStore(engineStore.subscribe, engineStore.getSnapshot, engineStore.getSnapshot)
+}
+
+function formatTick(tick: number) { return Math.floor(tick).toLocaleString('en-US', { minimumIntegerDigits: 5 }) }
+
+function CreatureJournal({ selectedId, onSelect, onClose }: { selectedId: string; onSelect: (id: string) => void; onClose: () => void }) {
+  const { world } = useEngineView()
+  const creatures = world?.creatures ?? []
+  const creature = creatures.find((item) => item.id === selectedId) ?? creatures[0]
+  if (!creature) return null
+  return <Inspector creature={creature} creatures={creatures} food={world?.food ?? []} select={onSelect}
+    onApplyProgram={(id, source) => engineStore.applyProgram(id, source)} onClose={onClose} />
+}
+
+function TickReadout() {
+  const { status, world } = useEngineView()
+  return <div className="dock-clock" title="Current Java simulation tick">
+    <span>JAVA ENGINE</span><i>·</i><strong>{formatTick(world?.tick ?? 0)}</strong><small>TICK</small>
+    {status === 'connecting' && <span className="engine-connecting">Connecting</span>}
+  </div>
+}
+
+function WorldCounts() {
+  const { world } = useEngineView()
+  if (!world) return null
+  return <div className="world-counts"><span>{world.creatures.length} little lives</span><i>·</i><span>{world.food.length} snacks</span></div>
+}
 
 export default function App() {
   const [running, setRunning] = useState(true)
   const [speed, setSpeed] = useState(1)
-  const [world, setWorld] = useState<WorldSnapshot>(createFixture)
-  const [selectedId, setSelectedId] = useState('c1')
-  const [showForkNote, setShowForkNote] = useState(false)
+  const [selectedId, setSelectedId] = useState('1')
+  const [journalOpen, setJournalOpen] = useState(true)
+  const [forkOpen, setForkOpen] = useState(false)
+  const [experiment, setExperiment] = useState<ForkExperiment | null>(null)
+  const { status, error, world } = useEngineView()
+
+  useEffect(() => { void engineStore.connect() }, [])
   useEffect(() => {
-    if (!running) return
-    const timer = window.setInterval(() => setWorld((current) => advanceFixture(current, speed)), 50)
-    return () => window.clearInterval(timer)
-  }, [running, speed])
-  const selected = useMemo(() => world.creatures.find((creature) => creature.id === selectedId) ?? world.creatures[0], [world.creatures, selectedId])
-  const selectCreature = useCallback((id: string) => setSelectedId(id), [])
-  const saveRules = useCallback((id: string, rules: CreatureRule[]) => setWorld((current) => updateSavedRules(current, id, rules)), [])
-  const activateRules = useCallback((id: string, rules: CreatureRule[]) => setWorld((current) => applyRules(current, id, rules)), [])
-  return <main className="app-shell">
-    <header className="topbar"><a className="brand" href="#"><span className="brand-mark"><i /><i /><i /></span><span>brood</span></a><div className="top-center"><span className="live-dot" /> A LITTLE WORLD, UNFOLDING</div><div className="top-actions"><span className="save-state"><i /> all tucked in</span><button className="round-button" aria-label="Open settings">☼</button><div className="profile">A</div></div></header>
-    <div className="workspace"><section className="world-column"><div className="title-row"><div><div className="breadcrumb">YOUR WORLDS <span>/</span> <b>NO. 01</b></div><h1>Fernlight <span>✳</span></h1><p className="subtitle">A small, sun-warmed place for curious things.</p></div><button className="more-button" aria-label="More world actions">•••</button></div>
-      <section className="terrarium-frame"><div className="glass-label"><span className="live-dot" /> <b>FERNLIGHT</b><span>·</span> DAY 04</div><Terrarium world={world} selectedId={selectedId} onSelect={selectCreature} />{world.food.length === 0 && <div className="empty-world">The last snack is gone. Little lives are exploring.</div>}<div className="world-tooltip tip-one">✳ &nbsp; food for curious noses</div><div className="canvas-caption"><span>{world.creatures.length} little lives</span><span>·</span><span>{world.food.length} snacks</span></div></section>
-      <div className="playback"><button className={`play-button ${running ? 'playing' : ''}`} onClick={() => setRunning(!running)} aria-label={running ? 'Pause simulation' : 'Play simulation'}>{running ? 'Ⅱ' : '▶'}</button><span className="play-label">{running ? 'WANDERING ALONG' : 'TAKING A BREATHER'}</span><span className="control-divider"/><div className="speed-control"><span>SPEED</span>{[1, 2, 4].map((value) => <button key={value} onClick={() => setSpeed(value)} className={speed === value ? 'active' : ''} aria-pressed={speed === value}>{value}×</button>)}</div><span className="tick-count">DAY 04 <i>·</i> {Math.floor(world.tick).toString().padStart(4, '0')} ticks</span><button className="restart-button" onClick={() => { setWorld(createFixture()); setSelectedId('c1') }} aria-label="Restart simulation">↺</button></div>
-      <div className="under-note"><span className="sun-icon">☼</span><span>It’s a good day to just watch.</span><span className="under-line"/><span className="under-detail">THE LIGHT IS SOFT TODAY</span></div>
-    </section><section className="side-column"><div className="side-header"><div><div className="breadcrumb">A CLOSER LOOK</div><h2>A little field note</h2></div><span className="leaf-doodle">❋</span></div><Inspector creature={selected} select={selectCreature} onSaveRules={saveRules} onApplyRules={activateRules} /><section className="fork-card"><div className="fork-topline"><span className="fork-icon">⑂</span><span className="coming-soon">ON THE HORIZON</span></div><h3>Fork Time</h3><p>Keep this moment. Wonder about another path.</p><div className="branch-preview" aria-label="Future side-by-side simulation comparison preview"><div><span>THIS MOMENT</span><i /></div><b>↔</b><div><span>ANOTHER PATH</span><i /></div></div><button className="fork-info-button" onClick={() => setShowForkNote(!showForkNote)} aria-expanded={showForkNote}>{showForkNote ? 'Close note' : 'What is Fork Time?'}</button>{showForkNote && <p className="fork-note">Fork Time will let you save a moment and explore a second version of the world beside it. Branching and replay are still being built.</p>}</section><div className="gentle-tip"><span>✦</span><p><b>A gentle thought</b><br/>Every little life has its own pace.<br/>There’s no wrong way to wander.</p></div></section></div>
-    <footer className="footer"><span>MADE FOR SMALL CURIOSITIES</span><span>WORLD SEED <b>7F3A · 21C9</b></span><span>STILL GROWING <i>✿</i></span></footer>
+    if (!running || status !== 'ready') return
+    let cancelled = false
+    let timer = 0
+    const schedule = () => {
+      timer = window.setTimeout(async () => {
+        await engineStore.advance(speed).catch(() => undefined)
+        if (!cancelled && engineStore.getSnapshot().status === 'ready') schedule()
+      }, 250)
+    }
+    schedule()
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [running, speed, status])
+
+  const selectCreature = useCallback((id: string) => {
+    setSelectedId(id)
+    setJournalOpen(true)
+    setForkOpen(false)
+  }, [])
+  const toggleFork = () => {
+    setForkOpen((open) => { if (!open) setRunning(false); return !open })
+    setJournalOpen(false)
+  }
+  const restart = () => { void engineStore.restart().catch(() => undefined); setSelectedId('1'); setJournalOpen(true); setForkOpen(false) }
+
+  return <main className="game-shell">
+    <div className="world-backdrop" aria-hidden="true"/>
+    <Terrarium selectedId={selectedId} onSelect={selectCreature}/>
+
+    <header className="game-header">
+      <a className="brand" href="#" aria-label="Brood home"><span className="brand-mark"><i/><i/><i/></span><span>brood</span></a>
+      <div className="world-identity"><span className="identity-spark">✳</span><div><strong>Fernlight</strong><small>A little world, unfolding</small></div></div>
+      <div className="header-actions">
+        <button className={`header-action ${journalOpen ? 'active' : ''}`} onClick={() => { setJournalOpen((open) => !open); setForkOpen(false) }} aria-expanded={journalOpen}><span>◉</span><b>Field journal</b></button>
+        <button className={`header-action fork-action ${forkOpen ? 'active' : ''}`} onClick={toggleFork} aria-expanded={forkOpen}><span>⑂</span><b>Fork Time</b></button>
+      </div>
+    </header>
+
+    <div className="world-whisper"><span className="whisper-flower">❋</span><span>A small, sun-warmed place<br/>for curious things.</span></div>
+    <div className="creature-caption" aria-live="polite"><span className="caption-pip"/><span>Click a little life to follow its path.</span></div>
+
+    <div className={`journal-drawer ${journalOpen ? 'open' : ''}`} aria-hidden={!journalOpen}>
+      <CreatureJournal selectedId={selectedId} onSelect={selectCreature} onClose={() => setJournalOpen(false)}/>
+    </div>
+    {forkOpen && <ForkTimePanel world={world} experiment={experiment}
+      onExperimentChange={setExperiment} onClose={() => setForkOpen(false)}
+      onReturn={() => { setForkOpen(false); setJournalOpen(true) }} />}
+
+    {status === 'error' && <div className="engine-error" role="alert"><strong>Java simulation unavailable</strong><span>{error || 'Start the Brood server, then reconnect.'}</span><button onClick={() => void engineStore.connect()}>Retry connection</button></div>}
+    <WorldCounts/>
+    <div className="control-dock">
+      <button className={`dock-play ${running ? 'is-running' : ''}`} onClick={() => setRunning((value) => !value)} aria-label={running ? 'Pause simulation' : 'Play simulation'}>{running ? 'Ⅱ' : '▶'}</button>
+      <span className="dock-separator"/>
+      <div className="dock-speed" aria-label="Simulation speed"><small>PACE</small>{[1, 2, 4].map((value) => <button key={value} onClick={() => setSpeed(value)} className={speed === value ? 'selected' : ''} aria-pressed={speed === value}>{value}<sup>×</sup></button>)}</div>
+      <span className="dock-separator"/>
+      <TickReadout/>
+      <button className={`dock-fork ${forkOpen ? 'selected' : ''}`} onClick={toggleFork} aria-label="Open Fork Time preview" aria-expanded={forkOpen} title="Explore Fork Time"><span>⑂</span><b>Fork</b></button>
+      <button className="dock-restart" onClick={restart} aria-label="Restart simulation" title="Start this world again">↺</button>
+    </div>
   </main>
 }

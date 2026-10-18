@@ -62,9 +62,28 @@ public record WorldState(long seed, long randomState, long tick, long nextEntity
             boolean knownRule = false;
             for (CreatureRule rule : eventCreature.rules()) {
                 if (rule.id().equals(event.ruleId())) {
-                    knownRule = true;
+                    knownRule = rule.condition() == event.condition() && rule.action() == event.action();
                     break;
                 }
+            }
+            if (event.programSource() != null) {
+                brood.lang.CreatureProgram eventProgram = new brood.lang.CreatureLanguage().compile(event.programSource());
+                for (brood.lang.CreatureProgram.Rule rule : eventProgram.rules()) {
+                    if (rule.id().equals(event.ruleId())) {
+                        CreatureRule.Action expectedAction = switch (rule.action()) {
+                            case SEEK_NEAREST_FOOD -> CreatureRule.Action.SEEK_FOOD;
+                            case EAT -> CreatureRule.Action.EAT;
+                            case REST -> CreatureRule.Action.REST;
+                            case WANDER -> CreatureRule.Action.WANDER;
+                        };
+                        knownRule = event.condition() == CreatureRule.Condition.PROGRAM
+                                && event.action() == expectedAction;
+                        break;
+                    }
+                }
+            } else if (event.condition() != CreatureRule.Condition.PROGRAM && eventCreature.program() != null) {
+                // Legacy events remain valid after a between-tick program replacement.
+                knownRule = true;
             }
             if (!knownRule) throw new IllegalArgumentException("Event references an unknown creature rule");
             if (event.targetFoodId() >= nextEntityId) throw new IllegalArgumentException("Event target exceeds the entity ID counter");

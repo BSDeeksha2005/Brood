@@ -1,32 +1,62 @@
+import type { CSSProperties } from 'react'
 import { useEffect, useState } from 'react'
-import type { Creature, CreatureRule, RuleAction, RuleCondition } from '../simulation/types'
+import type { Creature, Food } from '../simulation/types'
 
-const family = [
-  { id: 'c1', name: 'Mallow', kind: 'moss' }, { id: 'c2', name: 'Pip', kind: 'coral' },
-  { id: 'c3', name: 'Lumen', kind: 'lilac' }, { id: 'c4', name: 'Nori', kind: 'moss' },
-  { id: 'c5', name: 'Peach', kind: 'coral' }, { id: 'c6', name: 'Thimble', kind: 'lilac' },
-]
-const copyRules = (rules: CreatureRule[]) => rules.map((rule) => ({ ...rule }))
-const equalRules = (left: CreatureRule[], right: CreatureRule[]) => JSON.stringify(left) === JSON.stringify(right)
-
-export function Inspector({ creature, select, onSaveRules, onApplyRules }: {
-  creature: Creature; select: (id: string) => void
-  onSaveRules: (id: string, rules: CreatureRule[]) => void
-  onApplyRules: (id: string, rules: CreatureRule[]) => void
+export function Inspector({ creature, creatures, food, select, onApplyProgram, onClose }: {
+  creature: Creature
+  creatures: Creature[]
+  food: Food[]
+  select: (id: string) => void
+  onApplyProgram: (id: string, source: string) => Promise<void>
+  onClose: () => void
 }) {
-  const [editing, setEditing] = useState(false), [draft, setDraft] = useState(() => copyRules(creature.savedRules))
-  useEffect(() => { setDraft(copyRules(creature.savedRules)); setEditing(false) }, [creature.id])
-  const dirty = !equalRules(draft, creature.savedRules)
-  const applied = equalRules(creature.savedRules, creature.rules)
-  const updateRule = (id: string, field: 'condition' | 'action', value: RuleCondition | RuleAction) => setDraft((rules) => rules.map((rule) => rule.id === id ? { ...rule, [field]: value } : rule))
-  return <aside className="paper-card">
-    <div className="paper-top"><span className="eyebrow">FIELD NOTES <span>№ 0{creature.id.slice(1)}</span></span><span className="saved-state"><i /> {dirty ? 'Unsaved edits' : applied ? 'Applied' : 'Saved · not applied'}</span></div>
-    <div className="creature-heading"><span className={`creature-stamp ${creature.kind}`}><i /></span><div><h2>{creature.name}</h2><p>{creature.kind === 'moss' ? 'Mosskin' : creature.kind === 'coral' ? 'Sunspore' : 'Moonlet'} <span>·</span> generation {String(creature.generation).padStart(2, '0')}</p></div></div>
-    <div className="energy-row"><span>ENERGY</span><strong>{Math.round(creature.energy)}%</strong></div><div className="energy-track"><span style={{ width: `${creature.energy}%` }} /></div>
-    <div className="creature-readout"><div><span>RIGHT NOW</span><strong>{creature.goal || 'Finding a small adventure'}</strong></div><div><span>LAST RULE</span><strong>{creature.lastRule}</strong></div></div>
-    <div className="section-label rule-heading">LITTLE RULES <button onClick={() => { setDraft((rules) => [...rules, { id: `r${Math.max(0, ...rules.map((rule) => Number(rule.id.slice(1)) || 0)) + 1}`, condition: 'near-food', action: 'follow-scent' }]); setEditing(true) }} aria-label="Add a rule">+ Add rule</button></div>
-    {!editing && <div className="rule-list">{creature.rules.map((rule, index) => <button className="rule-card" key={rule.id} onClick={() => { setDraft(copyRules(creature.savedRules)); setEditing(true) }}><span className="rule-index">{String(index + 1).padStart(2, '0')}</span><span>If <b>{rule.condition === 'near-food' ? 'near food' : 'energy is low'}</b><br/>then <em>{rule.action === 'follow-scent' ? 'follow scent' : 'rest quietly'}</em></span><span className="rule-dot" /></button>)}{creature.rules.length === 0 && <p className="empty-rules">No rules yet. Add one to shape this little life.</p>}</div>}
-    {editing && <div className="rule-editor"><div className="editor-title"><span>RULE EDITOR</span><button onClick={() => { setDraft(copyRules(creature.savedRules)); setEditing(false) }}>Close</button></div>{draft.map((rule, index) => <div className="edit-rule" key={rule.id}><span className="rule-index">{String(index + 1).padStart(2, '0')}</span><label><span>If</span><select value={rule.condition} onChange={(event) => updateRule(rule.id, 'condition', event.target.value as RuleCondition)}><option value="near-food">near food</option><option value="energy-low">energy is low</option></select></label><label><span>Then</span><select value={rule.action} onChange={(event) => updateRule(rule.id, 'action', event.target.value as RuleAction)}><option value="follow-scent">follow scent</option><option value="rest">rest quietly</option></select></label><button className="remove-rule" onClick={() => setDraft((rules) => rules.filter((item) => item.id !== rule.id))} aria-label={`Remove rule ${index + 1}`}>×</button></div>)}<div className="editor-actions"><button className="save-rule" disabled={!dirty} onClick={() => onSaveRules(creature.id, draft)}>Save edits</button><button className="apply-rule" disabled={!applied && !dirty && equalRules(creature.rules, draft)} onClick={() => { onApplyRules(creature.id, draft); setEditing(false) }}>Apply to creature</button></div><p className="editor-hint">Saving keeps a note. Applying changes this creature’s behaviour.</p></div>}
-    <div className="siblings"><div className="section-label">THE LITTLE FAMILY <span>06</span></div><div className="avatar-row">{family.map((s) => <button key={s.id} onClick={() => select(s.id)} className={`mini-avatar ${s.kind} ${creature.id === s.id ? 'selected' : ''}`} aria-label={`Select ${s.name}`} title={s.name}><i /></button>)}</div></div>
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(creature.programSource)
+  const [applyError, setApplyError] = useState('')
+  const [applying, setApplying] = useState(false)
+  useEffect(() => {
+    setDraft(creature.programSource)
+    setEditing(false)
+    setApplyError('')
+  }, [creature.id, creature.programSource])
+
+  const snackNumber = creature.goal.match(/snack\s+(\d+)/i)?.[1]
+  const target = snackNumber ? food.find((item) => item.id === snackNumber || item.id === `f${snackNumber}`) : undefined
+  const gazeX = target ? Math.sign(target.x - creature.x) * 2.5 : 0
+  const gazeY = target ? Math.sign(target.y - creature.y) * 2 : 0
+  const gazeStyle = { '--gaze-x': `${gazeX}px`, '--gaze-y': `${gazeY}px` } as CSSProperties
+
+  const apply = async () => {
+    setApplyError('')
+    setApplying(true)
+    try {
+      await onApplyProgram(creature.id, draft)
+      setEditing(false)
+    } catch (error) {
+      setApplyError(error instanceof Error ? error.message : 'The program could not be applied.')
+    } finally {
+      setApplying(false)
+    }
+  }
+
+  return <aside className={`journal-page modern-journal ${creature.kind}`} aria-label={`${creature.name}'s creature journal`}>
+    <div className="journal-page-inner">
+      <div className="journal-topline"><span>Creature journal <b>№ {creature.id.padStart(2, '0')}</b></span><button className="journal-close" onClick={onClose} aria-label="Close field journal">×</button></div>
+      <div className={`journal-portrait ${creature.kind}`}>
+        <div className="portrait-wash"/>
+        <div className="portrait-creature" style={gazeStyle}><i className="portrait-eye left"/><i className="portrait-eye right"/><i className="portrait-cheek left"/><i className="portrait-cheek right"/><i className="portrait-sprout"/></div>
+      </div>
+      <div className="journal-identity">
+        <div><p className="journal-kicker">{creature.kind === 'moss' ? 'Mosskin' : creature.kind === 'coral' ? 'Sunspore' : 'Moonlet'} <span>·</span> Generation {String(creature.generation).padStart(2, '0')}</p><h2>{creature.name}</h2></div>
+        <div className="energy-seal"><strong>{Math.round(creature.energy)}<small>%</small></strong><span>Energy</span></div>
+      </div>
+      <div className="journal-energy" aria-label={`Energy ${Math.round(creature.energy)} percent`}><span style={{ width: `${creature.energy}%` }}/></div>
+      <p className="journal-observation"><span>Observation</span>{creature.observation}</p>
+      <div className="journal-facts"><div><span>Right now</span><strong>{creature.goal || 'Holding position'}</strong></div><div><span>Last rule</span><strong>{creature.lastRule}</strong></div></div>
+      <div className="journal-section-title"><span>Rules</span><span className={`note-state ${editing && draft !== creature.programSource ? 'unsaved' : 'applied'}`}>{editing && draft !== creature.programSource ? 'Unsaved edits' : 'Running in Java'}</span><button onClick={() => { setDraft(creature.programSource); setApplyError(''); setEditing(true) }} aria-label="Edit creature program">{editing ? 'Edit program' : 'Edit program'}</button></div>
+      {!editing && <div className="journal-rule-list">{creature.rules.map((rule, index) => <button className="rule-card journal-rule" key={rule.id} onClick={() => { setDraft(creature.programSource); setEditing(true) }} aria-label={`Edit ${rule.id}: ${rule.source}`}><span className="rule-index">{String(index + 1).padStart(2, '0')}</span><code>{rule.source}</code><span className={`rule-dot ${index % 2 ? 'lilac' : ''}`}/></button>)}{creature.rules.length === 0 && <p className="empty-rules">No executable rules are installed.</p>}</div>}
+      {editing && <div className="rule-editor journal-editor"><div className="editor-title"><span>Creature program</span><button onClick={() => { setDraft(creature.programSource); setApplyError(''); setEditing(false) }}>Close</button></div><label className="program-label" htmlFor="creature-program">Edit the rules that run on the next tick</label><textarea id="creature-program" className="program-source" spellCheck={false} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={'when energy <= 25000: rest\nwhen nearest_food <= 300000: seek nearest_food\notherwise: wander'}/><p className="editor-hint">One rule per line. Try <code>when energy &lt; 25000: rest</code> or <code>otherwise: seek nearest_food</code>.</p>{applyError && <p className="apply-error" role="alert">{applyError}</p>}<div className="editor-actions"><button className="save-rule" onClick={() => { setDraft(creature.programSource); setApplyError(''); setEditing(false) }}>Cancel</button><button className="apply-rule" disabled={applying} onClick={() => void apply()}>{applying ? 'Compiling…' : 'Apply and step'}</button></div></div>}
+      <div className="journal-family"><div className="journal-section-title"><span>In this world</span><b>{String(creatures.length).padStart(2, '0')}</b></div><div className="avatar-row">{creatures.map((member) => <button key={member.id} onClick={() => select(member.id)} className={`mini-avatar ${member.kind} ${creature.id === member.id ? 'selected' : ''}`} aria-label={`Select ${member.name}`} title={member.name}><i/><span>{member.name}</span></button>)}</div></div>
+    </div>
   </aside>
 }

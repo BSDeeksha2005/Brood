@@ -11,7 +11,7 @@ import java.util.Objects;
 
 /** Versioned canonical serialization and restore boundary for complete world state. */
 public final class WorldSnapshot {
-    public static final int CURRENT_VERSION = 1;
+    public static final int CURRENT_VERSION = 3;
     private static final int MAX_RECORDS = 1_000_000;
     private final WorldState state;
 
@@ -29,15 +29,28 @@ public final class WorldSnapshot {
 
     /** Canonical, newline-terminated UTF-8 text with explicit field and entity order. */
     public String serialize() {
+        return serialize(CURRENT_VERSION);
+    }
+
+    private String serialize(int version) {
         StringBuilder output = new StringBuilder();
-        line(output, "BROOD_SNAPSHOT", Integer.toString(CURRENT_VERSION));
+        line(output, "BROOD_SNAPSHOT", Integer.toString(version));
         line(output, "WORLD", Long.toString(state.seed()), Long.toString(state.randomState()),
                 Long.toString(state.tick()), Long.toString(state.nextEntityId()));
         line(output, "CREATURES", Integer.toString(state.creatures().size()));
         for (Creature creature : state.creatures()) {
-            line(output, "C", Long.toString(creature.id()), encode(creature.name()), Long.toString(creature.x()),
-                    Long.toString(creature.y()), Integer.toString(creature.energy()), Integer.toString(creature.generation()),
-                    Integer.toString(creature.rules().size()));
+            if (version == 1 && creature.program() != null) {
+                throw new IllegalArgumentException("Snapshot version 1 cannot contain creature programs");
+            }
+            if (version == 1) {
+                line(output, "C", Long.toString(creature.id()), encode(creature.name()), Long.toString(creature.x()),
+                        Long.toString(creature.y()), Integer.toString(creature.energy()), Integer.toString(creature.generation()),
+                        Integer.toString(creature.rules().size()));
+            } else {
+                line(output, "C", Long.toString(creature.id()), encode(creature.name()), Long.toString(creature.x()),
+                        Long.toString(creature.y()), Integer.toString(creature.energy()), Integer.toString(creature.generation()),
+                        Integer.toString(creature.rules().size()), encode(creature.programSource() == null ? "" : creature.programSource()));
+            }
             for (CreatureRule rule : creature.rules()) {
                 line(output, "R", encode(rule.id()), rule.condition().name(), rule.action().name());
             }
@@ -48,9 +61,16 @@ public final class WorldSnapshot {
         }
         line(output, "EVENTS", Integer.toString(state.events().size()));
         for (RuleExecutionEvent event : state.events()) {
-            line(output, "E", Long.toString(event.tick()), Long.toString(event.creatureId()), encode(event.ruleId()),
-                    event.condition().name(), event.action().name(), Long.toString(event.targetFoodId()),
-                    Long.toString(event.targetDistanceSquared()), Integer.toString(event.energyAtDecision()));
+            if (version >= 3) {
+                line(output, "E", Long.toString(event.tick()), Long.toString(event.creatureId()), encode(event.ruleId()),
+                        event.condition().name(), event.action().name(), Long.toString(event.targetFoodId()),
+                        Long.toString(event.targetDistanceSquared()), Integer.toString(event.energyAtDecision()),
+                        encode(event.programSource() == null ? "" : event.programSource()));
+            } else {
+                line(output, "E", Long.toString(event.tick()), Long.toString(event.creatureId()), encode(event.ruleId()),
+                        event.condition().name(), event.action().name(), Long.toString(event.targetFoodId()),
+                        Long.toString(event.targetDistanceSquared()), Integer.toString(event.energyAtDecision()));
+            }
         }
         line(output, "END");
         return output.toString();
@@ -71,7 +91,7 @@ public final class WorldSnapshot {
             Cursor cursor = new Cursor(serialized);
             String[] header = cursor.read("BROOD_SNAPSHOT", 2);
             int version = integer(header[1]);
-            if (version != CURRENT_VERSION) throw new IllegalArgumentException("Unsupported snapshot version: " + version);
+            if (version < 1 || version > CURRENT_VERSION) throw new IllegalArgumentException("Unsupported snapshot version: " + version);
 
             String[] worldRow = cursor.read("WORLD", 5);
             long seed = number(worldRow[1]);
@@ -82,7 +102,7 @@ public final class WorldSnapshot {
             int creatureCount = count(cursor.read("CREATURES", 2)[1]);
             List<Creature> creatures = new ArrayList<>(creatureCount);
             for (int index = 0; index < creatureCount; index++) {
-                String[] row = cursor.read("C", 8);
+                String[] row = cursor.read("C", version == 1 ? 8 : 9);
                 long id = number(row[1]);
                 String name = decode(row[2]);
                 long x = number(row[3]);
@@ -90,13 +110,15 @@ public final class WorldSnapshot {
                 int energy = integer(row[5]);
                 int generation = integer(row[6]);
                 int ruleCount = count(row[7]);
+                String programSource = version == 1 ? "" : decode(row[8]);
                 List<CreatureRule> rules = new ArrayList<>(ruleCount);
                 for (int ruleIndex = 0; ruleIndex < ruleCount; ruleIndex++) {
                     String[] ruleRow = cursor.read("R", 4);
                     rules.add(new CreatureRule(decode(ruleRow[1]), enumValue(CreatureRule.Condition.class, ruleRow[2]),
                             enumValue(CreatureRule.Action.class, ruleRow[3])));
                 }
-                creatures.add(new Creature(id, name, x, y, energy, generation, rules));
+                creatures.add(new Creature(id, name, x, y, energy, generation, rules,
+                        programSource.isEmpty() ? null : new brood.lang.CreatureLanguage().compile(programSource)));
             }
 
             int foodCount = count(cursor.read("FOOD", 2)[1]);
@@ -109,17 +131,18 @@ public final class WorldSnapshot {
             int eventCount = count(cursor.read("EVENTS", 2)[1]);
             List<RuleExecutionEvent> events = new ArrayList<>(eventCount);
             for (int index = 0; index < eventCount; index++) {
-                String[] row = cursor.read("E", 9);
+                String[] row = cursor.read("E", version >= 3 ? 10 : 9);
                 events.add(new RuleExecutionEvent(number(row[1]), number(row[2]), decode(row[3]),
                         enumValue(CreatureRule.Condition.class, row[4]), enumValue(CreatureRule.Action.class, row[5]),
-                        number(row[6]), number(row[7]), integer(row[8])));
+                        number(row[6]), number(row[7]), integer(row[8]),
+                        version >= 3 && !decode(row[9]).isEmpty() ? decode(row[9]) : null));
             }
             cursor.read("END", 1);
             cursor.requireEnd();
 
             WorldSnapshot snapshot = new WorldSnapshot(new WorldState(seed, randomState, tick, nextEntityId,
                     creatures, food, events));
-            if (!snapshot.serialize().equals(serialized)) {
+            if (!snapshot.serialize(version).equals(serialized)) {
                 throw new IllegalArgumentException("Snapshot is not in canonical format");
             }
             return snapshot;

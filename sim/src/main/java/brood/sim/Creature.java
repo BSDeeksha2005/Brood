@@ -4,10 +4,16 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import brood.lang.CreatureProgram;
 
 /** Immutable creature state. Coordinates use SimulationEngine.COORDINATE_SCALE units. */
 public record Creature(long id, String name, long x, long y, int energy, int generation,
-                       List<CreatureRule> rules) {
+                       List<CreatureRule> rules, CreatureProgram program) {
+    public Creature(long id, String name, long x, long y, int energy, int generation,
+                    List<CreatureRule> rules) {
+        this(id, name, x, y, energy, generation, rules, null);
+    }
+
     public Creature {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(rules, "rules");
@@ -26,6 +32,15 @@ public record Creature(long id, String name, long x, long y, int energy, int gen
             if (!ruleIds.add(rule.id())) throw new IllegalArgumentException("Duplicate rule ID: " + rule.id());
         }
     }
+
+    public static Creature programmed(long id, String name, long x, long y, int energy, int generation,
+                                      CreatureProgram program) {
+        Objects.requireNonNull(program, "program");
+        return new Creature(id, name, x, y, energy, generation, List.of(), program);
+    }
+
+    /** Canonical source retained by the typed program and serialized with the creature. */
+    public String programSource() { return program == null ? null : program.source(); }
 
     private static void validateCoordinate(long value, String name) {
         if (value < 0 || value > SimulationEngine.COORDINATE_SCALE) {

@@ -5,7 +5,15 @@ import java.util.Objects;
 /** A rule that actually matched during a tick, with the decision inputs used by the engine. */
 public record RuleExecutionEvent(long tick, long creatureId, String ruleId,
                                  CreatureRule.Condition condition, CreatureRule.Action action,
-                                 long targetFoodId, long targetDistanceSquared, int energyAtDecision) {
+                                 long targetFoodId, long targetDistanceSquared, int energyAtDecision,
+                                 String programSource) {
+    public RuleExecutionEvent(long tick, long creatureId, String ruleId,
+                              CreatureRule.Condition condition, CreatureRule.Action action,
+                              long targetFoodId, long targetDistanceSquared, int energyAtDecision) {
+        this(tick, creatureId, ruleId, condition, action, targetFoodId, targetDistanceSquared,
+                energyAtDecision, null);
+    }
+
     public RuleExecutionEvent {
         Objects.requireNonNull(ruleId, "ruleId");
         Objects.requireNonNull(condition, "condition");

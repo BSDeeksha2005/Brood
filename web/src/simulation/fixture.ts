@@ -1,4 +1,5 @@
-import type { Creature, CreatureRule, Food, WorldSnapshot } from './types'
+// This deterministic visual-only sample is retained for isolated UI work; the app uses EngineStore.
+import type { Creature, CreatureRule, Food, WorldSnapshot } from './fixtureTypes'
 
 // A fixed, deterministic stand-in keeps the first UI milestone swappable for Java snapshots.
 const starterRules: CreatureRule[] = [

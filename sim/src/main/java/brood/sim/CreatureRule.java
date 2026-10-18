@@ -15,11 +15,14 @@ public record CreatureRule(String id, Condition condition, Action action) {
 
     public enum Condition {
         LOW_ENERGY,
-        FOOD_NEARBY
+        FOOD_NEARBY,
+        PROGRAM
     }
 
     public enum Action {
         SEEK_FOOD,
-        REST
+        REST,
+        EAT,
+        WANDER
     }
 }
